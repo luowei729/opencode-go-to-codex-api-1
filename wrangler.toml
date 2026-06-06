@@ -1,0 +1,20 @@
+# Cloudflare Workers 配置
+# 本地开发: npx wrangler dev
+# 部署: npx wrangler deploy
+
+name = "opencode-go-to-codex-api-1"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
+
+# Import HTML files as text strings
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = true }
+]
+
+# 环境变量 (通过 wrangler secret set 或 CF 控制台设置)
+# [vars]
+# UPSTREAM_BASE_URL = "https://opencode.ai/zen/go"
+# DEFAULT_MODEL = ""
+# MODEL_MAP = ""
+
+# 注意: OPENCODE_TOKEN 不在服务端存储，用户需通过 Authorization 头传递自己的 token

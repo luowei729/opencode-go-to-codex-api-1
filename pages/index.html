@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenCode Go API Proxy - 模型管理</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+  .subtitle { color: #8b949e; margin-bottom: 24px; font-size: 14px; }
+  .status-bar { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+  .status-bar .label { color: #8b949e; font-size: 13px; }
+  .status-bar .value { color: #58a6ff; font-weight: 600; font-size: 15px; }
+  .status-bar .value.none { color: #8b949e; font-weight: 400; }
+  .btn-clear { background: #da3633; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .btn-clear:hover { background: #f85149; }
+  .btn-clear:disabled { opacity: 0.4; cursor: not-allowed; }
+  .section-title { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #c9d1d9; }
+  .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .model-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .model-card:hover { border-color: #58a6ff; background: #1c2129; }
+  .model-card.selected { border-color: #3fb950; background: #132a13; }
+  .model-card.selected::after { content: '\2713'; position: absolute; top: 10px; right: 14px; color: #3fb950; font-size: 18px; font-weight: bold; }
+  .model-name { font-size: 15px; font-weight: 600; color: #e1e4e8; margin-bottom: 6px; }
+  .model-meta { font-size: 12px; color: #8b949e; }
+  .model-meta .api-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; margin-top: 4px; }
+  .api-openai { background: #1f3a28; color: #3fb950; }
+  .api-anthropic { background: #3d2a1a; color: #d29922; }
+  .loading { text-align: center; padding: 40px; color: #8b949e; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #238636; color: #fff; padding: 12px 24px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #da3633; }
+  .info-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; font-size: 13px; color: #8b949e; line-height: 1.6; }
+  .info-box code { background: #21262d; padding: 2px 6px; border-radius: 4px; color: #79c0ff; font-size: 12px; }
+  .token-box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; }
+  .token-box label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+  .token-input-row { display: flex; gap: 8px; }
+  .token-input-row input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; color: #e1e4e8; font-size: 14px; font-family: monospace; outline: none; }
+  .token-input-row input:focus { border-color: #58a6ff; }
+  .token-input-row input::placeholder { color: #484f58; }
+  .btn-save { background: #238636; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .btn-save:hover { background: #2ea043; }
+  .token-status { font-size: 12px; color: #8b949e; margin-top: 6px; }
+  .token-status.ok { color: #3fb950; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>OpenCode Go API Proxy</h1>
+  <p class="subtitle">选择要强制使用的模型，所有 API 请求将统一使用该模型</p>
+
+  <div class="token-box">
+    <label>OpenCode Go Token（您的密钥仅存储在浏览器本地，不会上传到服务端）</label>
+    <div class="token-input-row">
+      <input type="password" id="tokenInput" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+      <button class="btn-save" onclick="saveToken()">保存</button>
+    </div>
+    <div class="token-status" id="tokenStatus"></div>
+  </div>
+
+  <div class="status-bar">
+    <div>
+      <div class="label">当前强制模型</div>
+      <div class="value" id="currentModel">加载中...</div>
+    </div>
+    <button class="btn-clear" id="btnClear" onclick="clearModel()" disabled>取消强制</button>
+  </div>
+
+  <div class="info-box">
+    点击模型卡片即可强制所有请求使用该模型。选择后无需重启容器，立即生效。<br>
+    代理地址: <code>http://127.0.0.1:3000</code> &nbsp;|&nbsp;
+    兼容 OpenAI Responses API (<code>/v1/responses</code>) 和 Chat Completions API (<code>/v1/chat/completions</code>)
+  </div>
+
+  <div class="section-title">可用模型</div>
+  <div class="model-grid" id="modelGrid">
+    <div class="loading">加载模型列表中...</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var ANTHROPIC_MODELS = ['minimax-m3', 'minimax-m2.7', 'minimax-m2.5', 'qwen3.7-max', 'qwen3.7-plus'];
+var currentRuntimeModel = null;
+var authToken = '';
+
+function isAnthropic(model) {
+  return ANTHROPIC_MODELS.indexOf(model) !== -1;
+}
+
+function getAuthHeaders() {
+  return authToken ? { 'Authorization': 'Bearer ' + authToken } : {};
+}
+
+function saveToken() {
+  var token = document.getElementById('tokenInput').value.trim();
+  if (token) {
+    authToken = token;
+    try { localStorage.setItem('opencode_token', token); } catch(e) {}
+    document.getElementById('tokenStatus').textContent = '\u2713 Token \u5df2\u4fdd\u5b58';
+    document.getElementById('tokenStatus').className = 'token-status ok';
+    loadModels();
+  } else {
+    document.getElementById('tokenStatus').textContent = '\u8bf7\u8f93\u5165\u6709\u6548\u7684 token';
+    document.getElementById('tokenStatus').className = 'token-status';
+  }
+}
+
+function loadModels() {
+  if (!authToken) {
+    document.getElementById('modelGrid').innerHTML = '<div class="loading">\u8bf7\u5148\u8f93\u5165\u5e76\u4fdd\u5b58 OpenCode Go Token</div>';
+    return;
+  }
+  Promise.all([
+    fetch('/v1/models', { headers: getAuthHeaders() }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }),
+    fetch('/api/default-model').then(function(r) { return r.json(); })
+  ]).then(function(results) {
+    var modelsData = results[0];
+    var defaultData = results[1];
+
+    currentRuntimeModel = defaultData.runtimeDefault || defaultData.envDefault || null;
+    updateStatusBar();
+
+    var models = (modelsData.data || []).map(function(m) { return m.id; }).sort();
+    var grid = document.getElementById('modelGrid');
+    grid.innerHTML = '';
+
+    models.forEach(function(model) {
+      var anthropic = isAnthropic(model);
+      var card = document.createElement('div');
+      card.className = 'model-card' + (currentRuntimeModel === model ? ' selected' : '');
+      card.setAttribute('data-model', model);
+      card.onclick = function() { selectModel(model); };
+
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'model-name';
+      nameDiv.textContent = model;
+
+      var metaDiv = document.createElement('div');
+      metaDiv.className = 'model-meta';
+      var tag = document.createElement('span');
+      tag.className = 'api-tag ' + (anthropic ? 'api-anthropic' : 'api-openai');
+      tag.textContent = anthropic ? 'Anthropic' : 'OpenAI';
+      metaDiv.appendChild(tag);
+
+      card.appendChild(nameDiv);
+      card.appendChild(metaDiv);
+      grid.appendChild(card);
+    });
+  }).catch(function(err) {
+    document.getElementById('modelGrid').innerHTML = '<div class="loading">加载失败: ' + err.message + '（请检查 Token 是否正确）</div>';
+  });
+}
+
+function updateStatusBar() {
+  var el = document.getElementById('currentModel');
+  var btn = document.getElementById('btnClear');
+  if (currentRuntimeModel) {
+    el.textContent = currentRuntimeModel;
+    el.className = 'value';
+    btn.disabled = false;
+  } else {
+    el.textContent = '未设置 (使用客户端传入的模型)';
+    el.className = 'value none';
+    btn.disabled = true;
+  }
+}
+
+function selectModel(model) {
+  fetch('/api/default-model', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: model })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) {
+      currentRuntimeModel = model;
+      updateStatusBar();
+      var cards = document.querySelectorAll('.model-card');
+      cards.forEach(function(card) {
+        if (card.getAttribute('data-model') === model) {
+          card.classList.add('selected');
+        } else {
+          card.classList.remove('selected');
+        }
+      });
+      showToast(data.message);
+    }
+  }).catch(function(err) {
+    showToast('设置失败: ' + err.message, true);
+  });
+}
+
+function clearModel() {
+  fetch('/api/default-model', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: null })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) {
+      currentRuntimeModel = null;
+      updateStatusBar();
+      var cards = document.querySelectorAll('.model-card');
+      cards.forEach(function(card) { card.classList.remove('selected'); });
+      showToast(data.message);
+    }
+  }).catch(function(err) {
+    showToast('取消失败: ' + err.message, true);
+  });
+}
+
+function showToast(msg, isError) {
+  var toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(function() { toast.className = 'toast'; }, 2500);
+}
+
+// Load token from localStorage on startup
+try {
+  var saved = localStorage.getItem('opencode_token');
+  if (saved) {
+    authToken = saved;
+    document.getElementById('tokenInput').value = saved;
+    document.getElementById('tokenStatus').textContent = '\u2713 \u5df2\u4ece\u672c\u5730\u5b58\u50a8\u52a0\u8f7d';
+    document.getElementById('tokenStatus').className = 'token-status ok';
+  }
+} catch(e) {}
+
+loadModels();
+</script>
+</body>
+</html>

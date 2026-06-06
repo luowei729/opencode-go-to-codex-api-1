@@ -1,0 +1,9 @@
+# Cloudflare Workers local development secrets
+# Copy this file to .dev.vars and fill in your values
+
+UPSTREAM_BASE_URL=https://opencode.ai/zen/go
+# DEFAULT_MODEL=kimi-k2.6
+# MODEL_MAP=gpt-5.5:kimi-k2.6,gpt-4:kimi-k2.5
+
+# Note: OPENCODE_TOKEN is NOT stored server-side on CF Workers.
+# Users must send their own token via Authorization: Bearer <token> header.
